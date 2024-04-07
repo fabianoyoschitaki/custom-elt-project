@@ -1,0 +1,48 @@
+version: '3'
+
+services:
+  # Source database to simulate the ELT
+  source_postgres:
+    image: postgres:15.6 # best practice is to never use latest image versions
+    ports: 
+      - "5433:5432"
+    networks:
+      - elt_network
+    environment:
+      POSTGRES_DB: source_postgres_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: source-secret
+    # each container can create data and persist to a volume so that data will always be persisted
+    volumes:
+      # first path is local and second is within docker container
+      - ./source_db_init/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  # Destination database to simulate the ELT
+  destination_postgres:
+    image: postgres:15.6 # best practice is to never use latest image versions
+    ports: 
+      - "5434:5432"
+    networks:
+      - elt_network
+    environment:
+      POSTGRES_DB: destination_postgres_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: destination-secret
+    # no volume here because we want the data to vanish whenever we restart this container
+  
+  elt_script:
+    build:
+      # path where dockerfile and stuff are in
+      context: ./elt
+      dockerfile: Dockerfile
+    command: ["python", "elt_script.py"]
+    networks:
+      - elt_network
+    # we need to wait for source to have the init.sql data and destination to receive the data from source
+    depends_on:
+      - source_postgres
+      - destination_postgres
+
+networks:
+  elt_network:
+    driver: bridge
